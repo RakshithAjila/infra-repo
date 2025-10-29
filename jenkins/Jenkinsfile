@@ -1,1 +1,53 @@
-Jenkinsfile
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = "ap-south-1"
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/<your-username>/<your-repo>.git'
+            }
+        }
+
+        stage('Terraform Init & Apply') {
+            steps {
+                dir('terraform') {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-creds'
+                    ]]) {
+                        sh '''
+                            terraform init -input=false
+                            terraform apply -auto-approve
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Ansible Configuration') {
+            steps {
+                dir('ansible') {
+                    withCredentials([sshUserPrivateKey(credentialsId: 'ansible-key', keyFileVariable: 'SSH_KEY')]) {
+                        sh '''
+                            chmod 600 $SSH_KEY
+                            ansible-playbook -i inventory.ini playbook.yml --key-file $SSH_KEY
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '✅ Pipeline complete (Terraform + Ansible).'
+        }
+    }
+}
+
